@@ -1,0 +1,46 @@
+{
+  "model_config": {
+    "model_path": "E:\\Huggingface\\models\\paraformer-zh-streaming",
+    "chunk_size": [0, 10, 5],
+    "encoder_chunk_look_back": 4,
+    "decoder_chunk_look_back": 1
+  },
+  "audio_config": {
+    "sample_rate": 16000,
+    "chunk_duration_ms": 600,
+    "channels": 1,
+    "format": "paInt16"
+  },
+  "api_config": {
+    "default_url": "http://localhost:5000/upload",
+    "timeout": 30,
+    "max_retries": 3
+  },
+  "ui_config": {
+    "window_size": "800x600",
+    "window_title": "OCR音频识别系统",
+    "theme": "default"
+  },
+  "file_categories": {
+    "发票类": {
+      "keywords": ["发票", "税票", "收据", "开票", "税额", "金额", "购买方", "销售方"],
+      "description": "包含发票、税票、收据等财务相关文档",
+      "default_prompt": "请识别这张发票的关键信息，包括开票日期、金额、购买方和销售方信息"
+    },
+    "合同类": {
+      "keywords": ["合同", "协议", "结算", "审定书", "建设", "施工", "甲方", "乙方"],
+      "description": "包含合同、协议、结算书等法律文档",
+      "default_prompt": "请提取合同中的甲乙双方信息、合同金额和主要条款"
+    },
+    "证书类": {
+      "keywords": ["证书", "资质", "许可", "认证", "等保", "测评", "资格"],
+      "description": "包含各类证书、资质、许可证等证明文档",
+      "default_prompt": "请识别证书的类型、颁发机构、有效期和相关资质信息"
+    },
+    "其他类": {
+      "keywords": [],
+      "description": "无法明确分类的其他文档",
+      "default_prompt": "请识别文档中的所有重要文字内容和关键信息"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+funasr
+pyaudio
+numpy
+requests
+tkinter
