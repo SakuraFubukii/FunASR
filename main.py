@@ -110,6 +110,11 @@ class OCRApp:
         self.process_button = ttk.Button(process_frame, text="发送OCR处理", command=self.process_ocr)
         self.process_button.grid(row=1, column=0, columnspan=2, pady=(10, 0))
         
+        # 添加进度条
+        self.progress_var = tk.StringVar(value="")
+        self.progress_label = ttk.Label(process_frame, textvariable=self.progress_var, foreground="blue")
+        self.progress_label.grid(row=2, column=0, columnspan=2, pady=(5, 0))
+        
         # 结果显示区域
         result_frame = ttk.LabelFrame(main_frame, text="处理结果", padding="10")
         result_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -274,7 +279,22 @@ class OCRApp:
             messagebox.showerror("错误", "请选择文件分类")
             return
         
+        # 禁用处理按钮，显示处理状态
+        self.process_button.config(state="disabled", text="处理中...")
+        self.progress_var.set("正在准备数据...")
+        self.result_area.delete(1.0, tk.END)
+        self.result_area.insert(tk.END, "正在发送请求，请稍候...\n")
+        
+        # 在后台线程中执行OCR处理
+        ocr_thread = threading.Thread(target=self._process_ocr_thread, daemon=True)
+        ocr_thread.start()
+    
+    def _process_ocr_thread(self):
+        """在后台线程中处理OCR请求"""
         try:
+            # 更新进度
+            self.root.after(0, self.progress_var.set, "正在准备数据...")
+            
             # 准备数据
             data = {
                 "category": self.category_var.get(),
@@ -285,25 +305,63 @@ class OCRApp:
                 }
             }
             
+            # 更新进度
+            self.root.after(0, self.progress_var.set, "正在发送请求...")
+            
             # 发送文件和数据
             with open(self.selected_file, 'rb') as f:
                 files = {'file': (os.path.basename(self.selected_file), f)}
                 response = requests.post(
                     self.api_var.get(),
                     files=files,
-                    data={'metadata': json.dumps(data)}
+                    data={'metadata': json.dumps(data)},
+                    timeout=300  # 设置超时为5分钟（300秒）
                 )
             
-            # 处理响应
+            # 更新进度
+            self.root.after(0, self.progress_var.set, "正在处理响应...")
+            
+            # 在主线程中处理响应
             if response.status_code == 200:
-                result = response.json()
-                self.display_result(result)
+                try:
+                    result = response.json()
+                    self.root.after(0, self._handle_success_response, result)
+                except json.JSONDecodeError:
+                    error_msg = f"服务器返回了非JSON格式的响应:\n{response.text}"
+                    self.root.after(0, self._handle_error_response, error_msg)
             else:
-                self.result_area.delete(1.0, tk.END)
-                self.result_area.insert(tk.END, f"请求失败，状态码: {response.status_code}\n错误信息: {response.text}")
+                error_msg = f"请求失败，状态码: {response.status_code}\n错误信息: {response.text}"
+                self.root.after(0, self._handle_error_response, error_msg)
                 
+        except requests.exceptions.Timeout:
+            error_msg = "请求超时，请检查网络连接或服务器状态"
+            self.root.after(0, self._handle_error_response, error_msg)
+        except requests.exceptions.ConnectionError:
+            error_msg = "连接失败，请检查API地址是否正确或服务器是否正在运行"
+            self.root.after(0, self._handle_error_response, error_msg)
+        except requests.exceptions.RequestException as e:
+            error_msg = f"网络请求错误: {str(e)}"
+            self.root.after(0, self._handle_error_response, error_msg)
         except Exception as e:
-            messagebox.showerror("错误", f"处理失败: {str(e)}")
+            error_msg = f"处理失败: {str(e)}"
+            self.root.after(0, self._handle_error_response, error_msg)
+    
+    def _handle_success_response(self, result):
+        """处理成功响应（在主线程中执行）"""
+        self.progress_var.set("处理完成")
+        self.display_result(result)
+        self.process_button.config(state="normal", text="发送OCR处理")
+        # 3秒后清除进度信息
+        self.root.after(3000, lambda: self.progress_var.set(""))
+    
+    def _handle_error_response(self, error_msg):
+        """处理错误响应（在主线程中执行）"""
+        self.progress_var.set("处理失败")
+        self.result_area.delete(1.0, tk.END)
+        self.result_area.insert(tk.END, error_msg)
+        self.process_button.config(state="normal", text="发送OCR处理")
+        # 3秒后清除进度信息
+        self.root.after(3000, lambda: self.progress_var.set(""))
     
     def display_result(self, result):
         """显示处理结果"""
@@ -315,7 +373,18 @@ class OCRApp:
         result_text += f"音频内容: {self.recorded_text.strip()}\n"
         result_text += "-" * 50 + "\n"
         result_text += "OCR识别结果:\n"
-        result_text += result.get('result', '无结果')
+        
+        # 安全处理result字段，确保它是字符串格式
+        ocr_result = result.get('result', '无结果')
+        if isinstance(ocr_result, dict):
+            # 如果是字典，格式化为可读的字符串
+            result_text += json.dumps(ocr_result, ensure_ascii=False, indent=2)
+        elif isinstance(ocr_result, (list, tuple)):
+            # 如果是列表或元组，转换为字符串
+            result_text += str(ocr_result)
+        else:
+            # 如果是其他类型，转换为字符串
+            result_text += str(ocr_result)
         
         self.result_area.insert(tk.END, result_text)
 
