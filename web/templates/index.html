@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR音频识别系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>OCR音频识别系统</h1>
+        
+        <!-- 文件上传区域 -->
+        <div class="panel" id="file-upload-panel">
+            <h2>文件上传</h2>
+            <div class="file-upload-area">
+                <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.bmp,.tiff,.pdf" style="display:none">
+                <button id="select-file-btn" class="btn">选择文件</button>
+                <span id="file-name">未选择文件</span>
+            </div>
+            
+            <div class="form-group">
+                <label for="category-select">文件分类:</label>
+                <select id="category-select">
+                    {% for category in categories %}
+                    <option value="{{ category }}">{{ category }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <!-- 音频录制区域 -->
+        <div class="panel" id="audio-recording-panel">
+            <h2>音频录制</h2>
+            <div class="button-group">
+                <button id="record-button" class="btn">开始录音</button>
+                <button id="clear-button" class="btn">清除录音</button>
+            </div>
+            <p id="status-label">未录音</p>
+            <div class="form-group">
+                <label for="recognition-result">识别结果: <span class="hint">(可手动编辑)</span></label>
+                <div class="text-area-container">
+                    <textarea id="recognition-result"></textarea>
+                </div>
+                <div class="button-group" style="margin-top: 10px;">
+                    <button id="save-text-button" class="btn">保存编辑</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 处理选项区域 -->
+        <div class="panel" id="process-panel">
+            <h2>处理选项</h2>
+            <div class="form-group">
+                <label for="api-url">OCR API地址:</label>
+                <input type="text" id="api-url" value="http://127.0.0.1:5000/upload">
+            </div>
+            <button id="process-button" class="btn primary">发送OCR处理</button>
+            <p id="progress-label" class="progress-label"></p>
+        </div>
+        
+        <!-- 结果显示区域 -->
+        <div class="panel" id="result-panel">
+            <h2>处理结果</h2>
+            <div class="text-area-container">
+                <textarea id="result-area" readonly></textarea>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 引入脚本 -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

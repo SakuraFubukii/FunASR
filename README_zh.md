@@ -26,52 +26,67 @@
 ## 文件结构
 
 ```
-├── main.py                    # 主程序 - GUI界面
-├── launcher.py               # Python启动器（推荐使用）
-├── paraformer.py             # 原始语音识别模块
-├── test.py                   # 原始测试文件
-├── test_enhanced.py          # 增强测试文件
-├── file_classifier.py        # 文件分类分析工具
-├── config.json               # 系统配置文件
-├── requirements.txt          # 依赖包列表
-├── README.md                 # 说明文档
-└── output/                   # 样例文件目录
-    ├── 结算审定书（VR集成应用管理平台）/
-    ├── 西南油气田数智分公司单个系统等保测评/
-    ├── 资产系统结算审定书1（盖章）/
-    ├── IMGCMP20220610141102110/
-    ├── IMGCMP20220610141102335/
-    └── IMGCMP20220610141102566/
+├── main.py                    # 主程序 - 桌面GUI界面
+├── launcher.py                # 桌面应用启动器
+├── web_launcher.py            # Web应用启动器（新增）
+├── paraformer.py              # 原始语音识别模块
+├── file_classifier.py         # 文件分类分析工具
+├── config.json                # 系统配置文件
+├── requirements.txt           # 依赖包列表
+├── web/                       # Web应用目录（新增）
+│   ├── app.py                 # Web应用主程序
+│   ├── requirements.txt       # Web应用依赖包列表
+│   ├── templates/             # HTML模板目录
+│   │   └── index.html         # 主页模板
+│   ├── static/                # 静态资源目录
+│   │   ├── css/               # CSS样式文件
+│   │   │   └── style.css      # 主样式表
+│   │   └── js/                # JavaScript脚本
+│   │       └── app.js         # 主脚本文件
+│   └── uploads/               # 文件上传目录
+├── README.md                  # 说明文档
+└── README_zh.md               # 中文说明文档
 ```
 
 ## 安装与配置
 
 ### 1. 安装依赖
+
+#### 桌面应用
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 配置语音识别模型
-确保Paraformer模型已下载到指定路径：
+#### Web应用
+
+```bash
+pip install -r web/requirements.txt
+```
+
+### 2. 下载并配置模型
+
+下载Paraformer模型并将其放置在指定位置：
+
 ```
 E:\Huggingface\models\paraformer-zh-streaming
 ```
 
-### 3. 配置音频设备
-确保系统已正确配置音频输入设备（麦克风）。
+如果需要使用其他位置，请修改配置文件中的路径。
 
 ## 使用方法
 
-### 方法一：启动器（推荐）
+### 桌面应用版本
+
+直接运行启动器：
+
 ```bash
 python launcher.py
 ```
+
 启动器会自动检查Python环境、依赖包和模型路径，提供完整的环境验证。
 
-### 方法二：直接启动
-```bash
-python main.py
-```
+#### 使用说明
 
 1. **选择文件**: 点击"选择文件"按钮，选择要处理的文档
 2. **文件分类**: 系统会自动分类，也可以手动调整
@@ -79,7 +94,25 @@ python main.py
 4. **发送处理**: 配置OCR API地址，点击"发送OCR处理"
 5. **查看结果**: 在结果区域查看OCR处理结果
 
-### 方法三：命令行测试
+### Web应用版本
+
+运行Web版启动器：
+
+```bash
+python web_launcher.py
+```
+
+启动后，通过浏览器访问：`http://localhost:5000`
+
+#### 使用说明
+
+1. **选择文件**: 点击"选择文件"按钮，选择要处理的图片或PDF文件
+2. **确认分类**: 系统会自动根据文件名推测分类，你也可以手动选择分类
+3. **录制音频**: 点击"开始录音"按钮（需要允许浏览器使用麦克风），说出与文件相关的指令或描述，完成后点击"停止录音"
+4. **发送处理**: 点击"发送OCR处理"按钮，将文件和音频文字发送给OCR接口
+5. **查看结果**: 在结果区域查看OCR处理结果
+
+### 命令行测试
 ```bash
 # 基本测试
 python test_enhanced.py
@@ -90,6 +123,15 @@ python file_classifier.py
 # 原始语音识别测试
 python paraformer.py
 ```
+
+## 注意事项
+
+1. 确保系统已安装必要的依赖包
+2. 确保Paraformer模型已正确下载并放置在指定位置
+3. 确保OCR API接口可访问
+4. Web应用版本需要支持WebRTC的现代浏览器（Chrome、Firefox、Edge等）
+5. 对于Web应用版本，确保浏览器允许访问麦克风
+6. 默认情况下，Web应用绑定到所有网络接口(0.0.0.0)，端口5000，如需修改，请编辑`web_launcher.py`文件
 
 ## API接口格式
 
