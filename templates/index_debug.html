@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR音频识别系统 - 调试版</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* 调试样式 */
+        .debug-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 9999;
+            max-width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .message {
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .message-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .message-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .message-warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .message-info {
+            background: #cce7ff;
+            color: #004085;
+            border: 1px solid #b3d7ff;
+        }
+        
+        .message-close {
+            background: none;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            margin-left: auto;
+            opacity: 0.7;
+        }
+        
+        .message-close:hover {
+            opacity: 1;
+        }
+        
+        .ocr-result, .audio-text {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .result-item {
+            margin: 10px 0;
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .result-item:last-child {
+            border-bottom: none;
+        }
+        
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- 调试信息面板 -->
+    <div class="debug-info" id="debugInfo" style="display: none;">
+        <strong>调试信息:</strong><br>
+        <div id="debugContent"></div>
+        <button onclick="toggleDebug()" style="margin-top: 5px; background: #007bff; color: white; border: none; padding: 2px 8px; border-radius: 3px; cursor: pointer;">隐藏</button>
+    </div>
+
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <h1><i class="fas fa-microphone-alt"></i> OCR音频识别系统</h1>
+            <p class="subtitle">支持文件上传、音频录制和OCR识别 - 调试版</p>
+            <button onclick="toggleDebug()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid white; padding: 5px 10px; border-radius: 3px; cursor: pointer;">
+                <i class="fas fa-bug"></i> 调试信息
+            </button>
+        </header>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 左侧控制面板 -->
+            <div class="left-panel">
+                <!-- 文件上传区域 -->
+                <section class="upload-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-upload"></i> 文件上传</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="upload-area" id="uploadArea">
+                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                <p>点击选择文件或拖拽文件到此处</p>
+                                <small>支持图片文件 (JPG, PNG, BMP, TIFF) 和 PDF 文件</small>
+                                <input type="file" id="fileInput" accept="image/*,.pdf" style="display: none;">
+                            </div>
+                            
+                            <div class="file-info" id="fileInfo" style="display: none;">
+                                <div class="file-details">
+                                    <i class="fas fa-file"></i>
+                                    <span id="fileName"></span>
+                                    <span id="fileSize" class="file-size"></span>
+                                </div>
+                                <button class="btn btn-secondary" id="removeFile">
+                                    <i class="fas fa-times"></i> 移除文件
+                                </button>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="categorySelect">文件分类:</label>
+                                <select id="categorySelect" class="form-control">
+                                    <option value="">请选择分类</option>
+                                    {% for category in categories %}
+                                    <option value="{{ category }}">{{ category }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 音频录制区域 -->
+                <section class="recording-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-microphone"></i> 音频录制</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="recording-controls">
+                                <button class="btn btn-primary" id="recordBtn">
+                                    <i class="fas fa-microphone"></i>
+                                    <span>开始录音</span>
+                                </button>
+                                <button class="btn btn-secondary" id="clearBtn">
+                                    <i class="fas fa-trash"></i>
+                                    <span>清除录音</span>
+                                </button>
+                            </div>
+                            
+                            <div class="recording-status" id="recordingStatus">
+                                <i class="fas fa-circle"></i>
+                                <span>未录音</span>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="textArea">识别结果:</label>
+                                <textarea id="textArea" class="form-control text-area" rows="4" placeholder="录音识别的文本将显示在这里..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 处理区域 -->
+                <section class="processing-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-cogs"></i> 处理选项</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="apiUrl">OCR API地址:</label>
+                                <input type="url" id="apiUrl" class="form-control" value="http://localhost:5000/upload" placeholder="请输入OCR API地址">
+                            </div>
+                            
+                            <div class="processing-controls">
+                                <button class="btn btn-success" id="processBtn">
+                                    <i class="fas fa-play"></i>
+                                    <span>发送OCR处理</span>
+                                </button>
+                            </div>
+                            
+                            <div class="progress-info" id="progressInfo" style="display: none;">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <span class="progress-text" id="progressText"></span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 右侧结果面板 -->
+            <div class="right-panel">
+                <!-- 结果显示区域 -->
+                <section class="result-section">
+                    <div class="card result-card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-list-alt"></i> 处理结果</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="result-area" id="resultArea">
+                                <div class="empty-result">
+                                    <i class="fas fa-info-circle"></i>
+                                    <p>处理结果将显示在这里</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <p>&copy; 2024 OCR音频识别系统. 保留所有权利. - 调试版本</p>
+        </footer>
+    </div>
+
+    <!-- 加载指示器 -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>正在处理，请稍候...</p>
+        </div>
+    </div>
+
+    <!-- 消息提示 -->
+    <div class="message-container" id="messageContainer"></div>
+
+    <!-- JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.4/socket.io.js"></script>
+    <script>
+        // 调试功能
+        let debugVisible = false;
+        function toggleDebug() {
+            const debugInfo = document.getElementById('debugInfo');
+            const debugContent = document.getElementById('debugContent');
+            
+            debugVisible = !debugVisible;
+            debugInfo.style.display = debugVisible ? 'block' : 'none';
+            
+            if (debugVisible && window.ocrApp) {
+                // 显示调试信息
+                debugContent.innerHTML = `
+                    Socket状态: ${window.ocrApp.socket ? (window.ocrApp.socket.connected ? '已连接' : '未连接') : '未初始化'}<br>
+                    录音状态: ${window.ocrApp.isRecording ? '录音中' : '未录音'}<br>
+                    选择文件: ${window.ocrApp.selectedFile || '无'}<br>
+                    页面元素: ${document.querySelectorAll('*').length} 个<br>
+                    时间: ${new Date().toLocaleTimeString()}
+                `;
+            }
+        }
+        
+        // 页面错误监听
+        window.addEventListener('error', (event) => {
+            console.error('页面错误:', event.error);
+            const debugContent = document.getElementById('debugContent');
+            if (debugContent) {
+                debugContent.innerHTML += `<br><span style="color: red;">错误: ${event.error.message}</span>`;
+            }
+        });
+        
+        // 检查依赖
+        console.log('检查依赖加载状态:');
+        console.log('Socket.IO:', typeof io !== 'undefined' ? '✅ 已加载' : '❌ 未加载');
+        console.log('DOM状态:', document.readyState);
+        
+        // 定期更新调试信息
+        setInterval(() => {
+            if (debugVisible && window.ocrApp) {
+                toggleDebug();
+                toggleDebug();
+            }
+        }, 5000);
+    </script>
+    <script src="{{ url_for('static', filename='js/app_fixed.js') }}"></script>
+</body>
+</html>

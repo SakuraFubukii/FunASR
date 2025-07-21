@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR音频识别系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <h1><i class="fas fa-microphone-alt"></i> OCR音频识别系统</h1>
+            <p class="subtitle">支持文件上传、音频录制和OCR识别</p>
+        </header>
+
+        <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 左侧控制面板 -->
+            <div class="left-panel">
+                <!-- 文件上传区域 -->
+                <section class="upload-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-upload"></i> 文件上传</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="upload-area" id="uploadArea">
+                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                <p>点击选择文件或拖拽文件到此处</p>
+                                <small>支持图片文件 (JPG, PNG, BMP, TIFF) 和 PDF 文件</small>
+                                <input type="file" id="fileInput" accept="image/*,.pdf" style="display: none;">
+                            </div>
+                            
+                            <div class="file-info" id="fileInfo" style="display: none;">
+                                <div class="file-details">
+                                    <i class="fas fa-file"></i>
+                                    <span id="fileName"></span>
+                                    <span id="fileSize" class="file-size"></span>
+                                </div>
+                                <button class="btn btn-secondary" id="removeFile">
+                                    <i class="fas fa-times"></i> 移除文件
+                                </button>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="categorySelect">文件分类:</label>
+                                <select id="categorySelect" class="form-control">
+                                    <option value="">请选择分类</option>
+                                    {% for category in categories %}
+                                    <option value="{{ category }}">{{ category }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 音频录制区域 -->
+                <section class="recording-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-microphone"></i> 音频录制</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="recording-controls">
+                                <button class="btn btn-primary" id="recordBtn">
+                                    <i class="fas fa-microphone"></i>
+                                    <span>开始录音</span>
+                                </button>
+                                <button class="btn btn-secondary" id="clearBtn">
+                                    <i class="fas fa-trash"></i>
+                                    <span>清除录音</span>
+                                </button>
+                            </div>
+                            
+                            <div class="recording-status" id="recordingStatus">
+                                <i class="fas fa-circle"></i>
+                                <span>未录音</span>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="textArea">识别结果:</label>
+                                <textarea id="textArea" class="form-control text-area" rows="4" placeholder="录音识别的文本将显示在这里..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 处理区域 -->
+                <section class="processing-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-cogs"></i> 处理选项</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label for="apiUrl">OCR API地址:</label>
+                                <input type="url" id="apiUrl" class="form-control" value="http://localhost:5000/upload" placeholder="请输入OCR API地址">
+                            </div>
+                            
+                            <div class="processing-controls">
+                                <button class="btn btn-success" id="processBtn">
+                                    <i class="fas fa-play"></i>
+                                    <span>发送OCR处理</span>
+                                </button>
+                            </div>
+                            
+                            <div class="progress-info" id="progressInfo" style="display: none;">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <span class="progress-text" id="progressText"></span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 右侧结果面板 -->
+            <div class="right-panel">
+                <!-- 结果显示区域 -->
+                <section class="result-section">
+                    <div class="card result-card">
+                        <div class="card-header">
+                            <h2><i class="fas fa-list-alt"></i> 处理结果</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="result-area" id="resultArea">
+                                <div class="empty-result">
+                                    <i class="fas fa-info-circle"></i>
+                                    <p>处理结果将显示在这里</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- 底部 -->
+        <footer class="footer">
+            <p>&copy; 2024 OCR音频识别系统. 保留所有权利.</p>
+        </footer>
+    </div>
+
+    <!-- 加载指示器 -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>正在处理，请稍候...</p>
+        </div>
+    </div>
+
+    <!-- 消息提示 -->
+    <div class="message-container" id="messageContainer"></div>
+
+    <!-- JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.4/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

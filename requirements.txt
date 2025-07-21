@@ -1,5 +1,7 @@
 funasr
-pyaudio
 numpy
 requests
-tkinter
+flask
+flask-socketio
+flask-cors
+werkzeug
