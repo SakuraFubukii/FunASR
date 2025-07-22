@@ -12,8 +12,10 @@ import webbrowser
 import threading
 import time
 import argparse
+import json
+from typing import Optional, List
 
-def check_python_version():
+def check_python_version() -> bool:
     """检查Python版本"""
     if sys.version_info < (3, 7):
         print("错误: 需要Python 3.7或更高版本")
@@ -21,51 +23,60 @@ def check_python_version():
         return False
     return True
 
-def open_browser(url, delay=2):
+def open_browser(url: str, delay: int = 2) -> None:
     """延迟打开浏览器"""
     def _open():
         time.sleep(delay)
         try:
             print(f"正在打开浏览器: {url}")
-            # 尝试打开默认浏览器
             webbrowser.open(url)
             print("✓ 浏览器已打开")
         except Exception as e:
             print(f"✗ 自动打开浏览器失败: {e}")
             print(f"请手动在浏览器中访问: {url}")
     
-    # 在后台线程中打开浏览器
     thread = threading.Thread(target=_open, daemon=True)
     thread.start()
 
-def check_package(package_name):
+def check_package(package_name: str) -> bool:
     """检查包是否已安装"""
     spec = importlib.util.find_spec(package_name)
     return spec is not None
 
-def install_requirements():
+def install_requirements() -> bool:
     """安装依赖包"""
     print("正在安装依赖包...")
     try:
-        # 安装依赖包
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "web/requirements.txt"])
-        print("依赖包安装完成")
+        print("✓ 依赖包安装完成")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"依赖包安装失败: {e}")
+        print(f"✗ 依赖包安装失败: {e}")
         return False
 
 def check_model_path():
     """检查模型路径"""
-    model_path = "E:\\Huggingface\\models\\paraformer-zh-streaming"
+    # 尝试从config.json加载模型路径
+    try:
+        import json
+        with open("config.json", "r", encoding="utf-8") as f:
+            config = json.load(f)
+        model_path = config.get("model_config", {}).get("model_path")
+        if not model_path:
+            print("警告: 配置文件中未找到模型路径")
+            return False
+    except Exception as e:
+        print(f"加载配置文件失败: {e}")
+        return False
+        
     if not os.path.exists(model_path):
         print(f"警告: 模型路径不存在 {model_path}")
-        print("请确保已下载Paraformer模型到指定路径")
+        print("请确保已下载Paraformer模型并更新config.json中的路径")
         return False
     
     return True
 
-def main():
+def main() -> None:
     """主函数"""
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='OCR音频识别系统Web启动器')
@@ -85,11 +96,7 @@ def main():
     
     # 检查必要的包
     required_packages = ['flask', 'flask_socketio', 'funasr', 'numpy', 'requests']
-    missing_packages = []
-    
-    for package in required_packages:
-        if not check_package(package):
-            missing_packages.append(package)
+    missing_packages = [pkg for pkg in required_packages if not check_package(pkg)]
     
     if missing_packages:
         print(f"缺少以下包: {', '.join(missing_packages)}")
@@ -111,6 +118,7 @@ def main():
     
     # 确保上传目录存在
     os.makedirs("web/uploads", exist_ok=True)
+    os.makedirs("uploads", exist_ok=True)
     
     # 启动Web服务
     print("启动OCR音频识别系统Web版...")

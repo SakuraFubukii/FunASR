@@ -16,11 +16,6 @@
     "timeout": 30,
     "max_retries": 3
   },
-  "ui_config": {
-    "window_size": "800x600",
-    "window_title": "OCR音频识别系统",
-    "theme": "default"
-  },
   "file_categories": {
     "发票类": {
       "keywords": ["发票", "税票", "收据", "开票", "税额", "金额", "购买方", "销售方"],
