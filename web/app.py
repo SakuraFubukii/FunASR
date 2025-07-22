@@ -153,9 +153,18 @@ def upload_file():
         file.save(filepath)
         
         # 获取表单数据
-        category = request.form.get('category', auto_categorize_file(filename))
-        audio_text = request.form.get('audio_text', '')
-        api_url = request.form.get('api_url', 'http://localhost:8080/upload')
+        metadata = request.form.get('metadata', '{}')
+        metadata_dict = json.loads(metadata)
+        
+        category = metadata_dict.get('category', auto_categorize_file(filename))
+        audio_text = metadata_dict.get('audio_text', '')
+        
+        # 打印接收到的数据
+        print("接收到的OCR处理请求数据:")
+        print(f"文件名: {filename}")
+        print(f"分类: {category}")
+        print(f"音频文本: {audio_text}")
+        print(f"元数据: {json.dumps(metadata_dict, ensure_ascii=False, indent=2)}")
         
         # TODO: 这里应该调用实际的OCR API处理文件
         # 模拟处理过程
@@ -172,6 +181,9 @@ def upload_file():
         return jsonify(result)
         
     except Exception as e:
+        print(f"处理文件上传时出错: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @socketio.on('connect')
