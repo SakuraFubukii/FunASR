@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-OCR音频识别系统Web版启动器
+OCR音频识别系统Web启动器
 """
 
 import sys
 import os
 import subprocess
 import importlib.util
+import webbrowser
+import threading
+import time
+import argparse
 
 def check_python_version():
     """检查Python版本"""
@@ -16,6 +20,23 @@ def check_python_version():
         print(f"当前版本: {sys.version}")
         return False
     return True
+
+def open_browser(url, delay=2):
+    """延迟打开浏览器"""
+    def _open():
+        time.sleep(delay)
+        try:
+            print(f"正在打开浏览器: {url}")
+            # 尝试打开默认浏览器
+            webbrowser.open(url)
+            print("✓ 浏览器已打开")
+        except Exception as e:
+            print(f"✗ 自动打开浏览器失败: {e}")
+            print(f"请手动在浏览器中访问: {url}")
+    
+    # 在后台线程中打开浏览器
+    thread = threading.Thread(target=_open, daemon=True)
+    thread.start()
 
 def check_package(package_name):
     """检查包是否已安装"""
@@ -26,16 +47,6 @@ def install_requirements():
     """安装依赖包"""
     print("正在安装依赖包...")
     try:
-        # 创建web版本的requirements.txt文件
-        with open("web/requirements.txt", "w") as f:
-            f.write("flask\n")
-            f.write("flask-socketio\n")
-            f.write("funasr\n")
-            f.write("numpy\n")
-            f.write("requests\n")
-            f.write("werkzeug\n")
-            f.write("eventlet\n")
-        
         # 安装依赖包
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "web/requirements.txt"])
         print("依赖包安装完成")
@@ -52,29 +63,19 @@ def check_model_path():
         print("请确保已下载Paraformer模型到指定路径")
         return False
     
-    # 确保web目录下的app.py与主程序使用相同的模型路径
-    try:
-        with open("web/app.py", "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # 检查并更新web/app.py中的模型路径
-        # 注意：在字符串比较中，需要考虑转义字符的区别
-        escaped_path = "E:\\\\Huggingface\\\\models\\\\paraformer-zh-streaming"  # Python字符串中的双反斜杠
-        if f'model="{escaped_path}"' not in content and f"model='{escaped_path}'" not in content:
-            print(f"警告: Web应用使用的模型路径可能与主程序不同")
-            print("建议确保两者使用相同的模型路径")
-            
-            # 可以在这里添加自动修复模型路径的代码
-            # 这需要谨慎处理，以免破坏app.py文件
-    except Exception as e:
-        print(f"读取Web应用配置时出错: {e}")
-    
     return True
 
 def main():
     """主函数"""
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='OCR音频识别系统Web启动器')
+    parser.add_argument('--debug', action='store_true', help='启用debug模式')
+    parser.add_argument('--no-browser', action='store_true', help='不自动打开浏览器')
+    parser.add_argument('--port', type=int, default=8080, help='服务器端口 (默认: 8080)')
+    args = parser.parse_args()
+    
     print("=" * 50)
-    print("OCR音频识别系统Web版启动器")
+    print("OCR音频识别系统Web启动器")
     print("=" * 50)
     
     # 检查Python版本
@@ -118,20 +119,24 @@ def main():
         print(f"Python版本: {sys.version}")
         print(f"当前工作目录: {os.getcwd()}")
         
-        # 检查模型目录权限
-        model_path = "E:\\Huggingface\\models\\paraformer-zh-streaming"
-        if os.path.exists(model_path):
-            try:
-                files = os.listdir(model_path)
-                print(f"模型目录包含{len(files)}个文件")
-            except PermissionError:
-                print(f"警告: 无法访问模型目录，可能存在权限问题")
-        
         # 导入并启动应用
         from web.app import socketio, app
-        print("服务器启动中，访问地址: http://localhost:8080")
-        print("提示: 使用浏览器访问上述地址，允许麦克风权限以进行音频识别")
-        socketio.run(app, host='0.0.0.0', port=8080, debug=True)
+        
+        # 设置服务器URL
+        server_url = f"http://localhost:{args.port}"
+        print(f"服务器地址: {server_url}")
+        print("提示: 请在浏览器中允许麦克风权限以进行音频识别")
+        print("-" * 50)
+        
+        # 根据参数决定是否自动打开浏览器
+        if not args.no_browser:
+            if not args.debug or os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
+                print("🌐 准备自动打开浏览器...")
+                open_browser(server_url, delay=2)
+        
+        print("🚀 启动Web服务器...")
+        # 启动服务器
+        socketio.run(app, host='0.0.0.0', port=args.port, debug=args.debug)
     except ImportError as e:
         print(f"导入Web应用程序失败: {e}")
         input("按回车键退出...")

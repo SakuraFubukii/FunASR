@@ -1,8 +1,8 @@
-# OCR Audio Recognition System
+# OCR Audio Recognition System Web Version
 
 [English](README.md)|[中文](README_zh.md)
 
-This is a comprehensive system that integrates file upload, automatic classification, speech recognition, and OCR processing. Users can upload files, record audio instructions, and send both file content and audio content to the OCR interface for processing.
+This is a web-based OCR audio recognition system that integrates file upload, automatic classification, speech recognition, and OCR processing. Users can upload files, record audio instructions, and send both file content and audio text to the OCR interface for processing through a web interface.
 
 ## Features
 
@@ -31,23 +31,23 @@ This is a comprehensive system that integrates file upload, automatic classifica
 ## Project Structure
 
 ```text
-├── main.py                    # Main program - GUI interface
-├── launcher.py               # Python launcher (recommended)
-├── paraformer.py             # Original speech recognition module
-├── test.py                   # Original test file
-├── test_enhanced.py          # Enhanced test file
+├── web_launcher.py           # Web application launcher
+├── paraformer.py             # Speech recognition module
 ├── file_classifier.py        # File classification analysis tool
 ├── config.json               # System configuration file
-├── requirements.txt          # Dependency list
+├── web/                      # Web application directory
+│   ├── app.py                # Flask web application main program
+│   ├── audio_config.py       # Audio configuration
+│   ├── requirements.txt      # Web application dependency list
+│   ├── static/               # Static resources
+│   │   ├── css/              # CSS stylesheets
+│   │   └── js/               # JavaScript scripts
+│   ├── templates/            # HTML templates
+│   │   └── index.html        # Main page template
+│   └── uploads/              # Web application file upload directory
+├── uploads/                  # File upload directory
 ├── README.md                 # Documentation (English)
-├── README_zh.md              # Documentation (Chinese)
-└── output/                   # Sample file directory
-    ├── 结算审定书（VR集成应用管理平台）/
-    ├── 西南油气田数智分公司单个系统等保测评/
-    ├── 资产系统结算审定书1（盖章）/
-    ├── IMGCMP20220610141102110/
-    ├── IMGCMP20220610141102335/
-    └── IMGCMP20220610141102566/
+└── README_zh.md              # Documentation (Chinese)
 ```
 
 ## Installation and Configuration
@@ -55,7 +55,7 @@ This is a comprehensive system that integrates file upload, automatic classifica
 ### 1. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r web/requirements.txt
 ```
 
 ### 2. Configure Speech Recognition Model
@@ -66,44 +66,38 @@ Ensure the Paraformer model is downloaded to the specified path:
 E:\Huggingface\models\paraformer-zh-streaming
 ```
 
-### 3. Configure Audio Device
+### 3. Configure Web Browser
 
-Ensure the system has properly configured audio input device (microphone).
+Ensure your web browser allows microphone access for real-time speech recognition.
 
 ## Usage
 
-### Method 1: Launcher (Recommended)
+### Starting the Web Application
 
 ```bash
-python launcher.py
+python web_launcher.py
 ```
 
-The launcher automatically checks Python environment, dependencies, and model paths, providing complete environment validation.
+The launcher automatically checks Python environment, dependencies, and model paths, providing complete environment validation before starting the web server.
 
-### Method 2: Direct Start
+### Command Line Options
 
 ```bash
-python main.py
+python web_launcher.py [options]
 ```
 
-1. **Select File**: Click "Select File" button to choose the document to process
-2. **File Classification**: System will auto-classify, can also manually adjust
-3. **Record Audio**: Click "Start Recording", speak your processing requirements for the document
-4. **Send for Processing**: Configure OCR API address, click "Send OCR Processing"
+Options:
+- `--debug`: Enable debug mode
+- `--no-browser`: Don't automatically open the browser
+- `--port PORT`: Specify server port (default: 8080)
+
+### Using the Web Interface
+
+1. **Open Browser**: Navigate to http://localhost:8080 (or the port you specified)
+2. **Upload File**: Click "Upload File" button to select a document for processing
+3. **Record Audio**: Click the microphone icon and speak your processing requirements
+4. **Send for Processing**: Configure OCR API address if needed, click "Send for Processing"
 5. **View Results**: Check OCR processing results in the result area
-
-### Method 3: Command Line Testing
-
-```bash
-# Basic testing
-python test_enhanced.py
-
-# File classification analysis
-python file_classifier.py
-
-# Original speech recognition testing
-python paraformer.py
-```
 
 ## API Interface Format
 
@@ -156,7 +150,7 @@ Based on different file types, recommend using the following audio instructions:
 ## System Requirements
 
 - Python 3.7+
-- Windows operating system (with PowerShell configured)
+- Modern web browser with microphone access support
 - Audio input device (microphone)
 - Network connection (for accessing OCR API)
 
@@ -169,34 +163,28 @@ Based on different file types, recommend using the following audio instructions:
    - Ensure funasr package is installed
 
 2. **Audio Recording Failed**
+   - Check if browser microphone permissions are allowed
    - Check if microphone is working properly
-   - Confirm pyaudio package is correctly installed
+   - Test microphone in browser settings
 
-3. **OCR Interface Call Failed**
+3. **Web Server Failed to Start**
+   - Check if port is already in use
+   - Ensure Flask and Flask-SocketIO are installed
+   - Check Python version compatibility
+
+4. **OCR Interface Call Failed**
    - Check if API address is correct
    - Confirm network connection is normal
    - Check if API service is running
 
-### Debugging Methods
-
-Run file classification analysis tool to view sample file analysis results:
-
-```bash
-python file_classifier.py
-```
-
-Run enhanced test tool to verify interface functionality:
-
-```bash
-python test_enhanced.py
-```
-
 ## Development Notes
 
-- `main.py`: Main program, contains complete GUI interface and functional logic
-- `paraformer.py`: Original command-line speech recognition program
-- `file_classifier.py`: File classification analysis tool for analyzing sample files
-- `test_enhanced.py`: Enhanced test program demonstrating complete API call flow
+- `web_launcher.py`: Web application launcher script
+- `web/app.py`: Main Flask application with routes and socket handlers
+- `paraformer.py`: Speech recognition module
+- `file_classifier.py`: File classification analysis tool
+- `web/static/js/app.js`: Client-side JavaScript for audio recording and UI
+- `web/templates/index.html`: Main web interface template
 
 ## Extended Features
 
@@ -207,3 +195,5 @@ Features that could be considered for addition:
 - Optimize speech recognition accuracy
 - Add result export functionality
 - Support batch file processing
+- User authentication and saved history
+- Responsive design for mobile devices

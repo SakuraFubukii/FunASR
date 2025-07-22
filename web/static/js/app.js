@@ -9,6 +9,8 @@ let selectedFile = null;
 let isRecording = false;
 let recordedText = "";
 let lastEditTime = 0; // 记录最后一次编辑时间
+let recordingMode = 'server'; // 默认使用服务器端录音
+let availableRecordingModes = ['browser', 'server']; // 可用的录音模式
 
 // DOM元素
 document.addEventListener('DOMContentLoaded', () => {
@@ -20,6 +22,16 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 初始化复制按钮
     initCopyButton();
+    
+    // 设置初始状态
+    updateProcessingStatus('等待处理', 'waiting');
+    
+    // 查询可用的录音模式
+    setTimeout(() => {
+        if (socket && socket.connected) {
+            socket.emit('get_recording_mode');
+        }
+    }, 1000); // 确保socket已连接
 });
 
 function connectSocket() {
@@ -34,6 +46,7 @@ function connectSocket() {
     socket.on('disconnect', () => {
         console.log('已断开与服务器的连接');
         updateStatus('已断开连接');
+        updateProcessingStatus('连接断开', 'error');
     });
     
     socket.on('model_status', (data) => {
@@ -52,7 +65,8 @@ function connectSocket() {
     
     socket.on('recording_status', (data) => {
         if (data.status === 'started') {
-            updateStatus('正在录音...');
+            const modeText = data.mode === 'server' ? '(服务器端)' : '(浏览器端)';
+            updateStatus(`正在录音...${modeText}`);
         } else if (data.status === 'stopped') {
             updateStatus('录音完成');
         } else if (data.status === 'cleared') {
@@ -64,6 +78,16 @@ function connectSocket() {
         recordedText = data.text;
     });
     
+    socket.on('recording_modes', (data) => {
+        availableRecordingModes = data.modes || ['browser', 'server'];
+        recordingMode = data.default || 'server';
+        const serverAvailable = data.server_available || false;
+        
+        // 更新UI以显示当前录音模式
+        updateRecordingModeUI(recordingMode, serverAvailable);
+        console.log(`录音模式已加载，当前模式：${recordingMode}，可用模式：${availableRecordingModes.join(', ')}`);
+    });
+    
     socket.on('file_category', (data) => {
         document.getElementById('category-select').value = data.category;
     });
@@ -71,6 +95,40 @@ function connectSocket() {
     socket.on('error', (data) => {
         showError(data.message);
     });
+}
+
+function updateRecordingModeUI(mode, serverAvailable) {
+    const recordingModeSelect = document.getElementById('recording-mode');
+    
+    // 保存现有选项
+    const currentMode = recordingModeSelect.value;
+    
+    // 清空所有选项
+    recordingModeSelect.innerHTML = '';
+    
+    // 添加服务器模式选项
+    if (serverAvailable) {
+        const serverOption = document.createElement('option');
+        serverOption.value = 'server';
+        serverOption.textContent = '服务器端录音（推荐，准确率更高）';
+        recordingModeSelect.appendChild(serverOption);
+    }
+    
+    // 添加浏览器模式选项
+    const browserOption = document.createElement('option');
+    browserOption.value = 'browser';
+    browserOption.textContent = '浏览器端录音';
+    recordingModeSelect.appendChild(browserOption);
+    
+    // 设置当前选择的模式
+    if (availableRecordingModes.includes(currentMode)) {
+        recordingModeSelect.value = currentMode;
+    } else {
+        recordingModeSelect.value = mode;
+    }
+    
+    // 保存当前模式
+    recordingMode = recordingModeSelect.value;
 }
 
 function initializeUI() {
@@ -113,6 +171,7 @@ function initializeUI() {
     
     // 录音按钮
     const recordButton = document.getElementById('record-button');
+    recordButton.className = 'btn record-start'; // 设置初始样式
     recordButton.addEventListener('click', toggleRecording);
     
     // 清除按钮
@@ -129,6 +188,13 @@ function initializeUI() {
         // 自动保存编辑的文本
         saveEditedText();
     }, 1000)); // 1秒延迟，避免频繁发送
+    
+    // 录音模式选择
+    const recordingModeSelect = document.getElementById('recording-mode');
+    recordingModeSelect.addEventListener('change', () => {
+        recordingMode = recordingModeSelect.value;
+        console.log(`录音模式已更改为: ${recordingMode}`);
+    });
     
     // 发送处理按钮
     const processButton = document.getElementById('process-button');
@@ -167,83 +233,89 @@ async function toggleRecording() {
 
 async function startRecording() {
     try {
-        // 请求麦克风权限
-        mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-                sampleRate: 16000,
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true
-            } 
-        });
+        console.log(`开始录音，模式: ${recordingMode}`);
         
-        // 初始化音频上下文 - 确保采样率与后端一致
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        
-        // 创建音频节点
-        const sourceNode = audioContext.createMediaStreamSource(mediaStream);
-        
-        // 使用与桌面端一致的音频块大小：600ms = 9600样本 (16kHz)
-        // 但Web Audio API要求缓冲区大小为2的幂，所以使用16384，然后截取9600样本
-        const DESKTOP_CHUNK_SIZE = 9600;  // 600ms × 16kHz，与桌面端一致
-        const BUFFER_SIZE = 16384;        // 2的幂，满足Web Audio API要求
-        console.log(`使用缓冲区大小: ${BUFFER_SIZE}, 音频块大小: ${DESKTOP_CHUNK_SIZE}`);
-        scriptProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-        
-        // 连接节点
-        sourceNode.connect(scriptProcessor);
-        scriptProcessor.connect(audioContext.destination);
-        
-        // 处理音频数据
-        scriptProcessor.onaudioprocess = (e) => {
-            if (!isRecording) return;
-            
-            // 获取音频数据
-            const input = e.inputBuffer.getChannelData(0);
-            
-            // 截取前9600样本，与桌面端保持一致
-            const audioData = new Float32Array(DESKTOP_CHUNK_SIZE);
-            for (let i = 0; i < DESKTOP_CHUNK_SIZE && i < input.length; i++) {
-                audioData[i] = input[i];
-            }
-            
-            // 计算音频质量指标
-            let maxAbs = 0;
-            for (let i = 0; i < audioData.length; i++) {
-                const abs = Math.abs(audioData[i]);
-                if (abs > maxAbs) maxAbs = abs;
-            }
-            
-            // 只有在数据明显超出正常范围时才进行归一化
-            if (maxAbs > 1.0) {
-                console.warn(`音频信号过载，最大值=${maxAbs.toFixed(4)}，进行归一化`);
-                for (let i = 0; i < audioData.length; i++) {
-                    audioData[i] /= maxAbs;
-                }
-            }
-            
-            // 输出调试信息到控制台（每10次只输出一次，避免过多日志）
-            if (!this.logCounter) this.logCounter = 0;
-            if (audioData.length > 0 && (this.logCounter++ % 10) === 0) {
-                console.log(`音频数据: 长度=${audioData.length}, 采样率=${audioContext.sampleRate}, 最大值=${maxAbs.toFixed(4)}`);
-            }
-            
-            // 将音频数据转为Base64并发送
-            const arrayBuffer = audioData.buffer;
-            const base64Audio = arrayBufferToBase64(arrayBuffer);
-            socket.emit('audio_data', { 
-                audio: base64Audio, 
-                bufferSize: audioData.length,
-                expectedChunkSize: DESKTOP_CHUNK_SIZE
+        if (recordingMode === 'browser') {
+            // 浏览器端录音模式 - 需要请求麦克风权限
+            mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true
+                } 
             });
-        };
+            
+            // 初始化音频上下文 - 确保采样率与后端一致
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            
+            // 创建音频节点
+            const sourceNode = audioContext.createMediaStreamSource(mediaStream);
+            
+            // 使用与桌面端一致的音频块大小：600ms = 9600样本 (16kHz)
+            // 但Web Audio API要求缓冲区大小为2的幂，所以使用16384，然后截取9600样本
+            const DESKTOP_CHUNK_SIZE = 9600;  // 600ms × 16kHz，与桌面端一致
+            const BUFFER_SIZE = 16384;        // 2的幂，满足Web Audio API要求
+            console.log(`使用缓冲区大小: ${BUFFER_SIZE}, 音频块大小: ${DESKTOP_CHUNK_SIZE}`);
+            scriptProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
+            
+            // 连接节点
+            sourceNode.connect(scriptProcessor);
+            scriptProcessor.connect(audioContext.destination);
+            
+            // 处理音频数据
+            scriptProcessor.onaudioprocess = (e) => {
+                if (!isRecording) return;
+                
+                // 获取音频数据
+                const input = e.inputBuffer.getChannelData(0);
+                
+                // 截取前9600样本，与桌面端保持一致
+                const audioData = new Float32Array(DESKTOP_CHUNK_SIZE);
+                for (let i = 0; i < DESKTOP_CHUNK_SIZE && i < input.length; i++) {
+                    audioData[i] = input[i];
+                }
+                
+                // 计算音频质量指标
+                let maxAbs = 0;
+                for (let i = 0; i < audioData.length; i++) {
+                    const abs = Math.abs(audioData[i]);
+                    if (abs > maxAbs) maxAbs = abs;
+                }
+                
+                // 只有在数据明显超出正常范围时才进行归一化
+                if (maxAbs > 1.0) {
+                    console.warn(`音频信号过载，最大值=${maxAbs.toFixed(4)}，进行归一化`);
+                    for (let i = 0; i < audioData.length; i++) {
+                        audioData[i] /= maxAbs;
+                    }
+                }
+                
+                // 输出调试信息到控制台（每10次只输出一次，避免过多日志）
+                if (!this.logCounter) this.logCounter = 0;
+                if (audioData.length > 0 && (this.logCounter++ % 10) === 0) {
+                    console.log(`音频数据: 长度=${audioData.length}, 采样率=${audioContext.sampleRate}, 最大值=${maxAbs.toFixed(4)}`);
+                }
+                
+                // 将音频数据转为Base64并发送
+                const arrayBuffer = audioData.buffer;
+                const base64Audio = arrayBufferToBase64(arrayBuffer);
+                socket.emit('audio_data', { 
+                    audio: base64Audio, 
+                    bufferSize: audioData.length,
+                    expectedChunkSize: DESKTOP_CHUNK_SIZE
+                });
+            };
+        }
         
-        // 通知服务器开始录音
-        socket.emit('start_recording');
+        // 通知服务器开始录音，指定录音模式
+        socket.emit('start_recording', { mode: recordingMode });
         
         // 更新UI
         isRecording = true;
-        document.getElementById('record-button').textContent = '停止录音';
+        const recordButton = document.getElementById('record-button');
+        recordButton.textContent = '停止录音';
+        recordButton.className = 'btn record-stop';
         updateStatus('正在录音...');
         
         // 清空识别结果
@@ -258,31 +330,46 @@ async function startRecording() {
 
 function stopRecording() {
     // 停止录音
-    if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
+    if (recordingMode === 'browser') {
+        // 浏览器录音模式下，需要清理浏览器端资源
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+        }
+        
+        if (scriptProcessor) {
+            scriptProcessor.disconnect();
+        }
+        
+        if (audioContext) {
+            audioContext.close();
+        }
     }
     
-    if (scriptProcessor) {
-        scriptProcessor.disconnect();
-    }
-    
-    if (audioContext) {
-        audioContext.close();
-    }
-    
-    // 通知服务器停止录音
-    socket.emit('stop_recording');
+    // 通知服务器停止录音，指定录音模式
+    socket.emit('stop_recording', { mode: recordingMode });
     
     // 更新UI
     isRecording = false;
-    document.getElementById('record-button').textContent = '开始录音';
+    const recordButton = document.getElementById('record-button');
+    recordButton.textContent = '开始录音';
+    recordButton.className = 'btn record-start';
     updateStatus('录音完成');
 }
 
 function clearRecording() {
+    // 如果正在录音，先停止录音
+    if (isRecording) {
+        stopRecording();
+    }
+    
     // 清除录音文本
     document.getElementById('recognition-result').value = '';
     recordedText = '';
+    
+    // 重置按钮样式
+    const recordButton = document.getElementById('record-button');
+    recordButton.textContent = '开始录音';
+    recordButton.className = 'btn record-start';
     
     // 通知服务器清除录音
     socket.emit('clear_recording');
@@ -307,9 +394,9 @@ function processOCR() {
     processButton.disabled = true;
     processButton.textContent = '处理中...';
     
-    updateProgress('正在准备数据...');
-    document.getElementById('processing-status').textContent = '处理状态：发送请求中...';
-    document.getElementById('result-area').textContent = '正在发送请求，请稍候...';
+    // 设置处理状态
+    updateProcessingStatus('正在识别', 'processing');
+    document.getElementById('result-area').textContent = '正在识别内容，请稍候...';
     
     // 获取当前编辑框中的文本（可能已被用户编辑）
     const currentText = document.getElementById('recognition-result').value;
@@ -341,34 +428,28 @@ function processOCR() {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        return response.json();
+    })
     .then(result => {
-        updateProgress('处理完成');
-        document.getElementById('processing-status').textContent = '处理状态：完成';
+        updateProcessingStatus('识别完成', 'success');
         displayResult(result);
         
         // 恢复按钮状态
         processButton.disabled = false;
         processButton.textContent = '发送OCR处理';
-        
-        // 3秒后清除进度信息
-        setTimeout(() => {
-            updateProgress('');
-        }, 3000);
     })
     .catch(error => {
-        updateProgress('处理失败');
-        document.getElementById('processing-status').textContent = '处理状态：失败';
-        document.getElementById('result-area').textContent = `处理失败: ${error.message}`;
+        console.error('处理失败:', error);
+        updateProcessingStatus('识别失败', 'error');
         
         // 恢复按钮状态
         processButton.disabled = false;
         processButton.textContent = '发送OCR处理';
         
-        // 3秒后清除进度信息
-        setTimeout(() => {
-            updateProgress('');
-        }, 3000);
+        // 显示错误信息
+        document.getElementById('result-area').textContent = `识别失败: ${error.message || '网络错误或服务器无响应'}`;
+        showError(`识别失败: ${error.message || '网络错误或服务器无响应'}`);
     });
 }
 
@@ -382,8 +463,25 @@ function updateStatus(status) {
     document.getElementById('status-label').textContent = status;
 }
 
-function updateProgress(message) {
-    document.getElementById('progress-label').textContent = message;
+function updateProcessingStatus(status, type = 'waiting') {
+    const statusElement = document.getElementById('processing-status');
+    const resultArea = document.getElementById('result-area');
+    
+    // 更新状态文本和样式
+    statusElement.textContent = status;
+    statusElement.className = `status-indicator ${type}`;
+    
+    // 根据状态类型添加加载样式
+    if (type === 'processing') {
+        resultArea.classList.add('loading');
+    } else {
+        resultArea.classList.remove('loading');
+    }
+}
+
+function updateProgress(message, progress = 0) {
+    // 进度条功能已移除，保留函数以避免错误
+    console.log(`Progress: ${message} (${progress}%)`);
 }
 
 function saveEditedText() {
@@ -432,13 +530,24 @@ function saveEditedText() {
 
 function displayResult(result) {
     const resultArea = document.getElementById('result-area');
-    const processingStatus = document.getElementById('processing-status');
-    
-    // 更新处理状态信息
-    processingStatus.textContent = `处理状态: ${result.status || 'Unknown'} | 处理时间: ${result.processing_time || 'Unknown'} | 文件分类: ${document.getElementById('category-select').value}`;
     
     // 格式化并显示结果
     let formattedResult = '';
+    
+    // 添加处理信息头部
+    const category = document.getElementById('category-select').value;
+    const fileInfo = selectedFile ? `文件: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)}KB)` : '无文件';
+    const audioInfo = recordedText ? `音频识别: ${recordedText.substring(0, 50)}${recordedText.length > 50 ? '...' : ''}` : '无音频';
+    
+    formattedResult += `=== 处理信息 ===\n`;
+    formattedResult += `文件分类: ${category}\n`;
+    formattedResult += `${fileInfo}\n`;
+    formattedResult += `${audioInfo}\n`;
+    formattedResult += `处理状态: ${result.status || 'success'}\n`;
+    if (result.processing_time) {
+        formattedResult += `处理时间: ${result.processing_time}\n`;
+    }
+    formattedResult += `\n=== OCR识别结果 ===\n`;
     
     // 处理OCR结果
     const ocrResult = result.result;

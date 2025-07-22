@@ -41,6 +41,13 @@
                     <button id="record-button" class="btn">开始录音</button>
                     <button id="clear-button" class="btn">清除录音</button>
                 </div>
+                <div class="recording-mode-container">
+                    <label for="recording-mode">录音模式:</label>
+                    <select id="recording-mode">
+                        <option value="server" selected>服务器端录音（推荐，准确率更高）</option>
+                        <option value="browser">浏览器端录音</option>
+                    </select>
+                </div>
                 <p id="status-label">未录音</p>
                 <div class="form-group">
                     <label for="recognition-result">识别结果: <span class="hint">(可手动编辑)</span></label>
@@ -58,28 +65,25 @@
                     <input type="text" id="api-url" value="http://127.0.0.1:5000/upload">
                 </div>
                 <button id="process-button" class="btn primary">发送OCR处理</button>
-                <p id="progress-label" class="progress-label"></p>
             </div>
         </div>
         
-        <!-- 状态显示区域 -->
-        <div class="status-panel">
-            <div class="panel">
-                <h2>处理状态</h2>
-                <p id="processing-status"></p>
-            </div>
-        </div>
-        
-        <!-- 下方区域：处理结果 -->
+        <!-- 结果区域：合并处理状态和结果显示 -->
         <div class="bottom-section">
-            <!-- 结果显示区域 -->
             <div class="panel" id="result-panel">
                 <div class="result-header">
                     <h2>处理结果</h2>
-                    <button id="copy-result" class="btn">复制结果</button>
+                    <div class="status-actions">
+                        <span id="processing-status" class="status-indicator">等待处理</span>
+                        <button id="copy-result" class="btn">复制结果</button>
+                    </div>
                 </div>
-                <div class="text-area-container">
-                    <pre id="result-area"></pre>
+                
+                <!-- 结果显示区 -->
+                <div class="result-content">
+                    <div class="text-area-container">
+                        <pre id="result-area" placeholder="处理结果将在这里显示...">点击"发送OCR处理"开始识别文档内容</pre>
+                    </div>
                 </div>
             </div>
         </div>

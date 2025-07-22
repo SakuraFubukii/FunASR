@@ -1,6 +1,6 @@
-# OCR音频识别系统
+# OCR音频识别系统 Web版
 
-这是一个集成了文件上传、自动分类、语音识别和OCR处理的综合系统。用户可以上传文件，录制音频指令，然后将文件内容和音频内容一起发送给OCR接口进行处理。
+这是一个基于Web的OCR音频识别系统，集成了文件上传、自动分类、语音识别和OCR处理功能。用户可以通过Web界面上传文件，录制音频指令，然后将文件内容和音频内容一起发送给OCR接口进行处理。
 
 ## 功能特点
 
@@ -26,15 +26,13 @@
 ## 文件结构
 
 ```
-├── main.py                    # 主程序 - 桌面GUI界面
-├── launcher.py                # 桌面应用启动器
-├── web_launcher.py            # Web应用启动器（新增）
-├── paraformer.py              # 原始语音识别模块
+├── web_launcher.py            # Web应用启动器
+├── paraformer.py              # 语音识别模块
 ├── file_classifier.py         # 文件分类分析工具
 ├── config.json                # 系统配置文件
-├── requirements.txt           # 依赖包列表
-├── web/                       # Web应用目录（新增）
-│   ├── app.py                 # Web应用主程序
+├── web/                       # Web应用目录
+│   ├── app.py                 # Flask Web应用主程序
+│   ├── audio_config.py        # 音频配置
 │   ├── requirements.txt       # Web应用依赖包列表
 │   ├── templates/             # HTML模板目录
 │   │   └── index.html         # 主页模板
@@ -43,8 +41,9 @@
 │   │   │   └── style.css      # 主样式表
 │   │   └── js/                # JavaScript脚本
 │   │       └── app.js         # 主脚本文件
-│   └── uploads/               # 文件上传目录
-├── README.md                  # 说明文档
+│   └── uploads/               # Web应用文件上传目录
+├── uploads/                   # 文件上传目录
+├── README.md                  # 英文说明文档
 └── README_zh.md               # 中文说明文档
 ```
 
@@ -52,19 +51,11 @@
 
 ### 1. 安装依赖
 
-#### 桌面应用
-
-```bash
-pip install -r requirements.txt
-```
-
-#### Web应用
-
 ```bash
 pip install -r web/requirements.txt
 ```
 
-### 2. 下载并配置模型
+### 2. 配置语音识别模型
 
 下载Paraformer模型并将其放置在指定位置：
 
@@ -72,66 +63,49 @@ pip install -r web/requirements.txt
 E:\Huggingface\models\paraformer-zh-streaming
 ```
 
-如果需要使用其他位置，请修改配置文件中的路径。
+如果需要使用其他位置，请修改web/app.py文件中的模型路径。
+
+### 3. 配置浏览器
+
+确保您的浏览器允许访问麦克风，以进行实时语音识别。
 
 ## 使用方法
 
-### 桌面应用版本
-
-直接运行启动器：
-
-```bash
-python launcher.py
-```
-
-启动器会自动检查Python环境、依赖包和模型路径，提供完整的环境验证。
-
-#### 使用说明
-
-1. **选择文件**: 点击"选择文件"按钮，选择要处理的文档
-2. **文件分类**: 系统会自动分类，也可以手动调整
-3. **录制音频**: 点击"开始录音"，说出对文档的处理要求
-4. **发送处理**: 配置OCR API地址，点击"发送OCR处理"
-5. **查看结果**: 在结果区域查看OCR处理结果
-
-### Web应用版本
-
-运行Web版启动器：
+### 启动Web应用
 
 ```bash
 python web_launcher.py
 ```
 
-启动后，通过浏览器访问：`http://localhost:5000`
+启动器会自动检查Python环境、依赖包和模型路径，提供完整的环境验证后启动web服务器。
 
-#### 使用说明
+### 命令行选项
 
-1. **选择文件**: 点击"选择文件"按钮，选择要处理的图片或PDF文件
-2. **确认分类**: 系统会自动根据文件名推测分类，你也可以手动选择分类
-3. **录制音频**: 点击"开始录音"按钮（需要允许浏览器使用麦克风），说出与文件相关的指令或描述，完成后点击"停止录音"
-4. **发送处理**: 点击"发送OCR处理"按钮，将文件和音频文字发送给OCR接口
-5. **查看结果**: 在结果区域查看OCR处理结果
-
-### 命令行测试
 ```bash
-# 基本测试
-python test_enhanced.py
-
-# 文件分类分析
-python file_classifier.py
-
-# 原始语音识别测试
-python paraformer.py
+python web_launcher.py [选项]
 ```
+
+选项:
+- `--debug`: 启用debug模式
+- `--no-browser`: 不自动打开浏览器
+- `--port PORT`: 指定服务器端口 (默认: 8080)
+
+### 使用Web界面
+
+1. **打开浏览器**: 访问 http://localhost:8080 (或您指定的端口)
+2. **上传文件**: 点击"上传文件"按钮，选择要处理的文档
+3. **录制音频**: 点击麦克风图标，说出对文档的处理要求
+4. **发送处理**: 如有需要配置OCR API地址，点击"发送处理"
+5. **查看结果**: 在结果区域查看OCR处理结果
 
 ## 注意事项
 
 1. 确保系统已安装必要的依赖包
 2. 确保Paraformer模型已正确下载并放置在指定位置
 3. 确保OCR API接口可访问
-4. Web应用版本需要支持WebRTC的现代浏览器（Chrome、Firefox、Edge等）
-5. 对于Web应用版本，确保浏览器允许访问麦克风
-6. 默认情况下，Web应用绑定到所有网络接口(0.0.0.0)，端口5000，如需修改，请编辑`web_launcher.py`文件
+4. 确保使用支持WebRTC的现代浏览器（Chrome、Firefox、Edge等）
+5. 确保浏览器允许访问麦克风
+6. 默认情况下，Web应用绑定到所有网络接口(0.0.0.0)，端口8080
 
 ## API接口格式
 
@@ -218,16 +192,21 @@ python test_enhanced.py
 
 ## 开发说明
 
-- `main.py`: 主程序，包含完整的GUI界面和功能逻辑
-- `paraformer.py`: 原始的命令行语音识别程序
-- `file_classifier.py`: 文件分类分析工具，用于分析样例文件
-- `test_enhanced.py`: 增强的测试程序，展示完整的API调用流程
+- `web_launcher.py`: Web应用启动器脚本
+- `web/app.py`: Flask主应用程序，包含路由和Socket处理程序
+- `paraformer.py`: 语音识别模块
+- `file_classifier.py`: 文件分类分析工具
+- `web/static/js/app.js`: 客户端JavaScript，用于音频录制和界面交互
+- `web/templates/index.html`: 主Web界面模板
 
 ## 扩展功能
 
 可以考虑添加的功能：
+
 - 支持更多文件格式
 - 增加更多文件分类
 - 优化语音识别准确率
 - 添加结果导出功能
 - 支持批量文件处理
+- 用户认证和历史记录保存
+- 响应式设计以支持移动设备

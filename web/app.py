@@ -15,6 +15,8 @@ import threading
 import queue
 from funasr import AutoModel
 import base64
+import pyaudio
+import datetime
 
 # 初始化Flask应用和SocketIO
 app = Flask(__name__)
@@ -96,10 +98,12 @@ FILE_CATEGORIES = {
     "其他类": ["其他", "未分类"]
 }
 
-# 音频参数
+# 音频参数 - 与桌面端保持一致
 SAMPLE_RATE = 16000
-# 与桌面端保持一致的音频块大小（600ms）
-DESKTOP_CHUNK_SIZE = int(SAMPLE_RATE * 600 / 1000)  # 9600 samples
+CHUNK_DURATION_MS = 600
+CHUNK_SIZE_SAMPLES = int(SAMPLE_RATE * CHUNK_DURATION_MS / 1000)  # 9600 samples
+CHANNELS = 1
+FORMAT = pyaudio.paInt16
 # Web Audio API使用的缓冲区大小（2的幂）
 WEB_BUFFER_SIZE = 16384
 
@@ -107,6 +111,9 @@ WEB_BUFFER_SIZE = 16384
 models = {}
 audio_queues = {}
 recorded_texts = {}
+# 跟踪服务器录音状态
+server_recording = {}
+audio_recorders = {}
 
 def allowed_file(filename):
     """检查文件类型是否允许上传"""
@@ -133,14 +140,80 @@ def initialize_model(sid):
             models[sid] = AutoModel(model="E:\Huggingface\models\paraformer-zh-streaming", disable_update=True)
             audio_queues[sid] = queue.Queue()
             recorded_texts[sid] = ""
+            server_recording[sid] = False
             return True
         except Exception as e:
             print(f"模型加载失败: {e}")
             return False
     return True
 
+def audio_recorder_thread(sid):
+    """服务端录音线程"""
+    if sid not in server_recording or sid not in audio_queues or sid not in models:
+        return
+        
+    try:
+        print(f"启动服务端录音线程 - 会话 {sid}")
+        p = pyaudio.PyAudio()
+        
+        # 打开音频流
+        stream = p.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=SAMPLE_RATE,
+            input=True,
+            frames_per_buffer=CHUNK_SIZE_SAMPLES
+        )
+        
+        # 持续录音，直到停止信号
+        while server_recording.get(sid, False):
+            try:
+                # 读取音频数据
+                data = stream.read(CHUNK_SIZE_SAMPLES, exception_on_overflow=False)
+                # 转换为float32格式，与桌面端保持一致
+                audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                
+                # 输出调试信息
+                if not hasattr(audio_recorder_thread, 'log_counter'):
+                    audio_recorder_thread.log_counter = 0
+                if audio_recorder_thread.log_counter % 10 == 0:
+                    rms = np.sqrt(np.mean(audio_data ** 2))
+                    min_val = np.min(audio_data)
+                    max_val = np.max(audio_data)
+                    print(f"服务端录音: 长度={len(audio_data)}, 范围=[{min_val:.4f}, {max_val:.4f}], RMS={rms:.6f}")
+                audio_recorder_thread.log_counter += 1
+                
+                # 放入队列
+                audio_queues[sid].put(audio_data)
+                
+            except Exception as e:
+                print(f"服务端录音错误: {e}")
+                break
+                
+    except Exception as e:
+        print(f"服务端录音线程异常: {e}")
+        import traceback
+        traceback.print_exc()
+        
+    finally:
+        # 清理资源
+        if 'stream' in locals():
+            try:
+                stream.stop_stream()
+                stream.close()
+            except:
+                pass
+            
+        if 'p' in locals():
+            try:
+                p.terminate()
+            except:
+                pass
+                
+        print(f"服务端录音线程已终止 - 会话 {sid}")
+
 def process_audio(sid):
-    """音频处理函数 - 与桌面端保持一致的参数"""
+    """音频处理函数"""
     if sid not in models or sid not in audio_queues:
         return
         
@@ -148,7 +221,7 @@ def process_audio(sid):
     chunk_count = 0
     
     try:
-        while True:
+        while server_recording.get(sid, False) or not audio_queues[sid].empty():
             try:
                 # 从队列获取音频数据
                 speech_chunk = audio_queues[sid].get(timeout=1.0)
@@ -278,7 +351,7 @@ def handle_disconnect():
         del recorded_texts[sid]
 
 @socketio.on('start_recording')
-def handle_start_recording():
+def handle_start_recording(data=None):
     """开始录音"""
     sid = request.sid
     
@@ -286,21 +359,66 @@ def handle_start_recording():
         emit('error', {'message': '模型初始化失败'})
         return
     
+    # 获取录音模式 - 'browser' 或 'server'
+    mode = data.get('mode', 'browser') if data else 'browser'
+    print(f"开始录音 - 模式: {mode}")
+    
     # 清空之前的录音文本
     recorded_texts[sid] = ""
     
-    # 启动音频处理线程
-    threading.Thread(target=process_audio, args=(sid,), daemon=True).start()
-    
-    emit('recording_status', {'status': 'started'})
+    if mode == 'server':
+        # 服务端录音模式
+        server_recording[sid] = True
+        
+        # 启动服务端录音线程
+        recorder_thread = threading.Thread(
+            target=audio_recorder_thread, 
+            args=(sid,), 
+            daemon=True
+        )
+        audio_recorders[sid] = recorder_thread
+        recorder_thread.start()
+        
+        # 启动音频处理线程
+        process_thread = threading.Thread(
+            target=process_audio, 
+            args=(sid,), 
+            daemon=True
+        )
+        process_thread.start()
+        
+        emit('recording_status', {'status': 'started', 'mode': 'server'})
+    else:
+        # 浏览器录音模式 (原有功能)
+        # 启动音频处理线程
+        threading.Thread(target=process_audio, args=(sid,), daemon=True).start()
+        emit('recording_status', {'status': 'started', 'mode': 'browser'})
 
 @socketio.on('stop_recording')
-def handle_stop_recording():
+def handle_stop_recording(data=None):
     """停止录音"""
     sid = request.sid
     
-    if sid in audio_queues:
-        audio_queues[sid].put(None)  # 发送结束信号
+    # 获取录音模式
+    mode = data.get('mode', 'browser') if data else 'browser'
+    print(f"停止录音 - 模式: {mode}")
+    
+    if mode == 'server' and sid in server_recording:
+        # 停止服务端录音
+        server_recording[sid] = False
+        
+        # 等待录音线程结束
+        if sid in audio_recorders and audio_recorders[sid].is_alive():
+            # 不等待超过2秒
+            audio_recorders[sid].join(timeout=2)
+            
+        # 发送结束信号到音频队列
+        if sid in audio_queues:
+            audio_queues[sid].put(None)
+    else:
+        # 浏览器端录音模式
+        if sid in audio_queues:
+            audio_queues[sid].put(None)  # 发送结束信号
     
     # 返回完整的录音文本
     if sid in recorded_texts:
@@ -312,6 +430,10 @@ def handle_stop_recording():
 def handle_clear_recording():
     """清除录音"""
     sid = request.sid
+    
+    # 确保录音已停止
+    if sid in server_recording and server_recording[sid]:
+        server_recording[sid] = False
     
     if sid in recorded_texts:
         recorded_texts[sid] = ""
@@ -380,6 +502,15 @@ def handle_audio_data(data):
         traceback.print_exc()
 
 
+
+@socketio.on('get_recording_mode')
+def handle_get_recording_mode():
+    """获取当前支持的录音模式"""
+    emit('recording_modes', {
+        'modes': ['browser', 'server'],
+        'default': 'server',  # 将服务器端录音设为默认
+        'server_available': True  # 标记服务器端录音可用
+    })
 
 @socketio.on('check_file')
 def handle_check_file(data):
