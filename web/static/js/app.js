@@ -183,10 +183,11 @@ async function startRecording() {
         // 创建音频节点
         const sourceNode = audioContext.createMediaStreamSource(mediaStream);
         
-        // Web Audio API要求缓冲区大小必须是2的幂，选择8192作为接近的值
-        // 8192是最接近9600（600ms×16kHz）的2的幂
-        const BUFFER_SIZE = 8192;
-        console.log(`使用缓冲区大小: ${BUFFER_SIZE}`);
+        // 使用与桌面端一致的音频块大小：600ms = 9600样本 (16kHz)
+        // 但Web Audio API要求缓冲区大小为2的幂，所以使用16384，然后截取9600样本
+        const DESKTOP_CHUNK_SIZE = 9600;  // 600ms × 16kHz，与桌面端一致
+        const BUFFER_SIZE = 16384;        // 2的幂，满足Web Audio API要求
+        console.log(`使用缓冲区大小: ${BUFFER_SIZE}, 音频块大小: ${DESKTOP_CHUNK_SIZE}`);
         scriptProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
         
         // 连接节点
@@ -200,19 +201,22 @@ async function startRecording() {
             // 获取音频数据
             const input = e.inputBuffer.getChannelData(0);
             
-            // 转换音频数据为Float32Array并确保数据范围在[-1.0, 1.0]之间
-            const audioData = new Float32Array(input.length);
-            
-            // 复制数据并检查范围
-            let maxAbs = 0;
-            for (let i = 0; i < input.length; i++) {
-                const abs = Math.abs(input[i]);
-                if (abs > maxAbs) maxAbs = abs;
+            // 截取前9600样本，与桌面端保持一致
+            const audioData = new Float32Array(DESKTOP_CHUNK_SIZE);
+            for (let i = 0; i < DESKTOP_CHUNK_SIZE && i < input.length; i++) {
                 audioData[i] = input[i];
             }
             
-            // 如果需要归一化
+            // 计算音频质量指标
+            let maxAbs = 0;
+            for (let i = 0; i < audioData.length; i++) {
+                const abs = Math.abs(audioData[i]);
+                if (abs > maxAbs) maxAbs = abs;
+            }
+            
+            // 只有在数据明显超出正常范围时才进行归一化
             if (maxAbs > 1.0) {
+                console.warn(`音频信号过载，最大值=${maxAbs.toFixed(4)}，进行归一化`);
                 for (let i = 0; i < audioData.length; i++) {
                     audioData[i] /= maxAbs;
                 }
@@ -227,7 +231,11 @@ async function startRecording() {
             // 将音频数据转为Base64并发送
             const arrayBuffer = audioData.buffer;
             const base64Audio = arrayBufferToBase64(arrayBuffer);
-            socket.emit('audio_data', { audio: base64Audio, bufferSize: audioData.length });
+            socket.emit('audio_data', { 
+                audio: base64Audio, 
+                bufferSize: audioData.length,
+                expectedChunkSize: DESKTOP_CHUNK_SIZE
+            });
         };
         
         // 通知服务器开始录音
@@ -432,18 +440,59 @@ function displayResult(result) {
     // 格式化并显示结果
     let formattedResult = '';
     
-    // 安全处理result字段
+    // 处理OCR结果
     const ocrResult = result.result;
-    if (typeof ocrResult === 'object') {
-        formattedResult = JSON.stringify(ocrResult, null, 2);
-    } else if (typeof ocrResult === 'string') {
-        // 将字符串中的\n转换为实际的换行符
-        formattedResult = ocrResult.replace(/\\n/g, '\n');
+    
+    if (typeof ocrResult === 'string') {
+        // 检查是否为JSON字符串
+        try {
+            const parsedJson = JSON.parse(ocrResult);
+            if (parsedJson && typeof parsedJson === 'object' && parsedJson.result) {
+                // 如果是包含result字段的JSON，只提取result内容
+                formattedResult = formatOcrText(parsedJson.result);
+            } else {
+                // 普通JSON，格式化显示
+                formattedResult = JSON.stringify(parsedJson, null, 2);
+            }
+        } catch (e) {
+            // 不是JSON字符串，直接处理文本格式
+            formattedResult = formatOcrText(ocrResult);
+        }
+    } else if (typeof ocrResult === 'object') {
+        if (ocrResult && ocrResult.result) {
+            // 如果是包含result字段的对象，只提取result内容
+            formattedResult = formatOcrText(ocrResult.result);
+        } else {
+            // 普通对象，格式化显示
+            formattedResult = JSON.stringify(ocrResult, null, 2);
+        }
     } else {
-        formattedResult = String(ocrResult);
+        formattedResult = formatOcrText(String(ocrResult));
     }
     
     resultArea.textContent = formattedResult;
+}
+
+// 格式化OCR文本的辅助函数
+function formatOcrText(text) {
+    if (!text || typeof text !== 'string') {
+        return String(text || '');
+    }
+    
+    // 将转义的换行符转换为实际换行符
+    let formatted = text.replace(/\\n/g, '\n');
+    
+    // 将转义的制表符转换为实际制表符
+    formatted = formatted.replace(/\\t/g, '\t');
+    
+    // 将转义的引号转换为实际引号
+    formatted = formatted.replace(/\\"/g, '"');
+    formatted = formatted.replace(/\\'/g, "'");
+    
+    // 将转义的反斜杠转换为实际反斜杠
+    formatted = formatted.replace(/\\\\/g, '\\');
+    
+    return formatted;
 }
 
 function showError(message) {

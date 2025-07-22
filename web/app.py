@@ -26,6 +26,65 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+def format_ocr_result(ocr_response):
+    """
+    格式化OCR响应结果
+    处理JSON响应中的result字段，并将转义字符转换为实际字符
+    """
+    try:
+        # 如果输入是字符串，尝试解析为JSON
+        if isinstance(ocr_response, str):
+            try:
+                parsed_response = json.loads(ocr_response)
+            except json.JSONDecodeError:
+                # 如果不是JSON，直接处理文本
+                return ocr_response.replace('\\n', '\n').replace('\\t', '\t')
+        else:
+            parsed_response = ocr_response
+        
+        # 如果响应包含result字段，提取并格式化
+        if isinstance(parsed_response, dict) and 'result' in parsed_response:
+            result_text = parsed_response['result']
+            if isinstance(result_text, str):
+                # 将转义的换行符转换为实际换行符
+                formatted_text = result_text.replace('\\n', '\n')
+                formatted_text = formatted_text.replace('\\t', '\t')
+                formatted_text = formatted_text.replace('\\"', '"')
+                formatted_text = formatted_text.replace("\\'", "'")
+                formatted_text = formatted_text.replace('\\\\', '\\')
+                return formatted_text
+            else:
+                return str(result_text)
+        else:
+            # 如果没有result字段，返回原始响应
+            return json.dumps(parsed_response, ensure_ascii=False, indent=2)
+            
+    except Exception as e:
+        print(f"格式化OCR结果时出错: {e}")
+        return str(ocr_response)
+
+def call_ocr_api(file_path, category, audio_text):
+    """
+    调用OCR API处理文件
+    这里应该替换为实际的OCR API调用
+    """
+    # TODO: 替换为实际的OCR API调用
+    # 现在返回模拟的结果，格式与您提供的示例一致
+    mock_response = {
+        "result": "发票号码：051002100204\\n机器编号：127011985051\\n开票日期：2022年06月08日\\n购买方名称：中国石油天然气股份有限公司西南油气田分公司川西北气矿\\n购买方纳税人识别号：91510781720845511K\\n购买方地址：江油市李白大道南一段517号\\n购买方电话：0816-3611151\\n购买方开户行及账号：江油市工行明月新城支行2308422509100002749\\n货物或应税劳务、服务名称：餐饮服务餐饮费\\n规格型号：无\\n单位：顿\\n数量：1\\n单价：1665.00\\n金额：￥1665.00\\n税率：免税\\n税额：0.00\\n合计（小写）：￥1665.00\\n价税合计（大写）：壹仟陆佰陆拾伍圆整\\n校验码：14075 23769 4451927788\\n销售方名称：苍溪县鸳溪镇双双农家乐\\n销售方纳税人识别号：92510824MA639P198U\\n销售方地址：苍溪县鸳溪镇口梁村四组\\n销售方电话：18383961723\\n销售方开户行及账号：四川农商银行鸳溪支行6214590782007087422\\n复核：杨洪双\\n开票人：杨洪双\\n收款人：杨洪双\\n发票专用章编号：5108245053742"
+    }
+    
+    # 格式化结果
+    formatted_result = format_ocr_result(mock_response)
+    
+    return {
+        'status': 'success',
+        'ocr_result': formatted_result,
+        'category': category,
+        'audio_text': audio_text,
+        'file_path': file_path
+    }
+
 # 允许的文件类型
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'pdf'}
 
@@ -39,8 +98,10 @@ FILE_CATEGORIES = {
 
 # 音频参数
 SAMPLE_RATE = 16000
-# Web端使用8192作为缓冲区大小（2的幂）
-CHUNK_SIZE = 8192
+# 与桌面端保持一致的音频块大小（600ms）
+DESKTOP_CHUNK_SIZE = int(SAMPLE_RATE * 600 / 1000)  # 9600 samples
+# Web Audio API使用的缓冲区大小（2的幂）
+WEB_BUFFER_SIZE = 16384
 
 # 模型实例和音频队列字典，用于多用户同时访问
 models = {}
@@ -79,7 +140,7 @@ def initialize_model(sid):
     return True
 
 def process_audio(sid):
-    """音频处理函数"""
+    """音频处理函数 - 与桌面端保持一致的参数"""
     if sid not in models or sid not in audio_queues:
         return
         
@@ -98,7 +159,7 @@ def process_audio(sid):
                 chunk_count += 1
                 print(f"处理音频块 {chunk_count}, 形状={speech_chunk.shape}")
                     
-                # 处理音频块
+                # 使用与桌面端完全一致的参数处理音频块
                 res = models[sid].generate(
                     input=speech_chunk,
                     cache=cache,
@@ -120,6 +181,8 @@ def process_audio(sid):
                 
     except Exception as e:
         print(f"音频处理错误: {e}")
+        import traceback
+        traceback.print_exc()
         
     finally:
         # 清理资源
@@ -166,18 +229,20 @@ def upload_file():
         print(f"音频文本: {audio_text}")
         print(f"元数据: {json.dumps(metadata_dict, ensure_ascii=False, indent=2)}")
         
-        # TODO: 这里应该调用实际的OCR API处理文件
-        # 模拟处理过程
-        time.sleep(2)  # 模拟处理时间
+        # 调用OCR API处理文件
+        print("开始OCR处理...")
+        ocr_result = call_ocr_api(filepath, category, audio_text)
         
         # 返回处理结果
         result = {
-            'status': 'success',
-            'processing_time': '2.0秒',
-            'result': f'文件 {filename} 已成功处理，分类为 {category}，音频文本: {audio_text[:50]}...',
-            'file_path': filepath
+            'status': ocr_result['status'],
+            'processing_time': '2.0秒',  # 实际应该计算处理时间
+            'result': ocr_result['ocr_result'],  # 只返回格式化后的OCR文本
+            'category': ocr_result['category'],
+            'file_path': ocr_result['file_path']
         }
         
+        print(f"OCR处理完成，结果长度: {len(result['result'])}")
         return jsonify(result)
         
     except Exception as e:
@@ -264,26 +329,46 @@ def handle_audio_data(data):
     try:
         # 解析Base64音频数据
         audio_bytes = base64.b64decode(data['audio'])
-        buffer_size = data.get('bufferSize', 8192)
+        buffer_size = data.get('bufferSize', DESKTOP_CHUNK_SIZE)
+        expected_chunk_size = data.get('expectedChunkSize', DESKTOP_CHUNK_SIZE)
         
-        # 确保使用正确的数据类型和归一化方法，与桌面端保持一致
+        # 前端发送的是Float32Array格式的音频数据（已经归一化到[-1.0, 1.0]范围）
         audio_data = np.frombuffer(audio_bytes, dtype=np.float32)
-        
-        # 检查和确保音频数据的范围在[-1.0, 1.0]之间
-        max_abs = np.max(np.abs(audio_data))
-        if max_abs > 1.0:
-            audio_data = audio_data / max_abs  # 归一化到[-1.0, 1.0]范围
         
         # 如果音频数据为空或异常，记录并返回
         if audio_data.size == 0:
             print(f"警告: 收到空的音频数据")
             return
+        
+        # 验证音频数据范围
+        max_abs = np.max(np.abs(audio_data))
+        if max_abs > 1.0:
+            print(f"警告: 音频数据超出范围 [-1.0, 1.0], max_abs={max_abs:.4f}, 进行归一化")
+            audio_data = audio_data / max_abs
+        
+        # 确保音频数据长度与桌面端一致（9600样本）
+        if audio_data.size != DESKTOP_CHUNK_SIZE:
+            print(f"警告: 音频块大小不匹配，期望={DESKTOP_CHUNK_SIZE}, 实际={audio_data.size}")
+            if audio_data.size < DESKTOP_CHUNK_SIZE:
+                # 填充零到目标长度
+                padded_audio = np.zeros(DESKTOP_CHUNK_SIZE, dtype=np.float32)
+                padded_audio[:audio_data.size] = audio_data
+                audio_data = padded_audio
+            else:
+                # 截断到目标长度
+                audio_data = audio_data[:DESKTOP_CHUNK_SIZE]
+            print(f"已调整音频块大小到: {audio_data.size}")
+        
+        # 计算音频质量指标
+        rms = np.sqrt(np.mean(audio_data ** 2))
+        min_val = np.min(audio_data)
+        max_val = np.max(audio_data)
             
         # 添加调试信息（每10次只输出一次，避免日志过多）
         if not hasattr(handle_audio_data, 'log_counter'):
             handle_audio_data.log_counter = 0
         if handle_audio_data.log_counter % 10 == 0:
-            print(f"接收音频数据: 形状={audio_data.shape}, 最小值={np.min(audio_data):.4f}, 最大值={np.max(audio_data):.4f}, 缓冲区大小={buffer_size}")
+            print(f"接收音频数据: 形状={audio_data.shape}, 范围=[{min_val:.4f}, {max_val:.4f}], RMS={rms:.6f}, 期望块大小={expected_chunk_size}")
         handle_audio_data.log_counter += 1
         
         # 将音频数据放入队列
