@@ -1,4 +1,4 @@
-// OCR音频识别系统前端脚本
+// OCR识别系统前端脚本
 
 // 全局变量
 let socket;
@@ -8,6 +8,7 @@ let scriptProcessor;
 let selectedFile = null;
 let isRecording = false;
 let recordedText = "";
+let lastEditTime = 0; // 记录最后一次编辑时间
 
 // DOM元素
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,6 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 初始化页面交互
     initializeUI();
+    
+    // 初始化复制按钮
+    initCopyButton();
 });
 
 function connectSocket() {
@@ -73,18 +77,37 @@ function initializeUI() {
     // 文件上传按钮
     const selectFileBtn = document.getElementById('select-file-btn');
     const fileInput = document.getElementById('file-input');
+    const dropArea = document.getElementById('drop-area');
     
     selectFileBtn.addEventListener('click', () => {
         fileInput.click();
     });
     
+    // 文件选择处理
     fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            selectedFile = e.target.files[0];
-            document.getElementById('file-name').textContent = `已选择: ${selectedFile.name}`;
-            
-            // 通知服务器检查文件
-            socket.emit('check_file', { filename: selectedFile.name });
+        handleFileSelect(e.target.files);
+    });
+    
+    // 拖放功能
+    dropArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.classList.add('active');
+    });
+    
+    dropArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.classList.remove('active');
+    });
+    
+    dropArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.classList.remove('active');
+        
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            handleFileSelect(e.dataTransfer.files);
         }
     });
     
@@ -96,13 +119,42 @@ function initializeUI() {
     const clearButton = document.getElementById('clear-button');
     clearButton.addEventListener('click', clearRecording);
     
-    // 保存编辑按钮
-    const saveTextButton = document.getElementById('save-text-button');
-    saveTextButton.addEventListener('click', saveEditedText);
+    // 音频识别结果实时编辑监听
+    const recognitionResult = document.getElementById('recognition-result');
+    recognitionResult.addEventListener('input', debounce(function() {
+        // 获取编辑后的文本
+        const editedText = recognitionResult.value;
+        // 保存到全局变量
+        recordedText = editedText;
+        // 自动保存编辑的文本
+        saveEditedText();
+    }, 1000)); // 1秒延迟，避免频繁发送
     
     // 发送处理按钮
     const processButton = document.getElementById('process-button');
     processButton.addEventListener('click', processOCR);
+}
+
+// 处理文件选择
+function handleFileSelect(files) {
+    if (files.length > 0) {
+        selectedFile = files[0];
+        document.getElementById('file-name').textContent = `已选择: ${selectedFile.name}`;
+        
+        // 通知服务器检查文件
+        socket.emit('check_file', { filename: selectedFile.name });
+    }
+}
+
+// 防抖函数
+function debounce(func, wait) {
+    let timeout;
+    return function() {
+        const context = this;
+        const args = arguments;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait);
+    };
 }
 
 async function toggleRecording() {
@@ -248,7 +300,8 @@ function processOCR() {
     processButton.textContent = '处理中...';
     
     updateProgress('正在准备数据...');
-    document.getElementById('result-area').value = '正在发送请求，请稍候...\n';
+    document.getElementById('processing-status').textContent = '处理状态：发送请求中...';
+    document.getElementById('result-area').textContent = '正在发送请求，请稍候...';
     
     // 获取当前编辑框中的文本（可能已被用户编辑）
     const currentText = document.getElementById('recognition-result').value;
@@ -267,6 +320,9 @@ function processOCR() {
         }
     };
     
+    // 打印发送的数据内容到控制台
+    console.log("发送到OCR API的数据:", data);
+    
     // 创建表单数据
     const formData = new FormData();
     formData.append('file', selectedFile);
@@ -280,6 +336,7 @@ function processOCR() {
     .then(response => response.json())
     .then(result => {
         updateProgress('处理完成');
+        document.getElementById('processing-status').textContent = '处理状态：完成';
         displayResult(result);
         
         // 恢复按钮状态
@@ -293,7 +350,8 @@ function processOCR() {
     })
     .catch(error => {
         updateProgress('处理失败');
-        document.getElementById('result-area').value = `处理失败: ${error.message}`;
+        document.getElementById('processing-status').textContent = '处理状态：失败';
+        document.getElementById('result-area').textContent = `处理失败: ${error.message}`;
         
         // 恢复按钮状态
         processButton.disabled = false;
@@ -321,6 +379,17 @@ function updateProgress(message) {
 }
 
 function saveEditedText() {
+    // 获取当前时间
+    const now = Date.now();
+    
+    // 如果距离上次编辑不到1秒，则不处理
+    if (now - lastEditTime < 1000) {
+        return;
+    }
+    
+    // 更新最后编辑时间
+    lastEditTime = now;
+    
     // 获取编辑后的文本
     const editedText = document.getElementById('recognition-result').value;
     
@@ -330,43 +399,51 @@ function saveEditedText() {
     // 发送到服务器
     socket.emit('update_recognition_text', { text: editedText });
     
-    // 显示保存中的状态
-    updateStatus('保存中...');
+    // 显示保存状态
+    updateStatus('自动保存中...');
     
-    // 添加一个简单的动画效果，显示保存成功
-    socket.on('recognition_updated', (data) => {
-        if (data.success) {
-            updateStatus('编辑已保存');
-            
-            // 3秒后恢复状态
-            setTimeout(() => {
-                updateStatus('录音完成');
-            }, 3000);
-        } else {
-            showError(`保存失败: ${data.message || '未知错误'}`);
-        }
-    });
+    // 设置监听，只添加一次
+    if (!saveEditedText.hasListener) {
+        socket.on('recognition_updated', (data) => {
+            if (data.success) {
+                updateStatus('已自动保存');
+                
+                // 2秒后恢复状态
+                setTimeout(() => {
+                    if (!isRecording) {
+                        updateStatus('录音完成');
+                    }
+                }, 2000);
+            } else {
+                showError(`保存失败: ${data.message || '未知错误'}`);
+            }
+        });
+        saveEditedText.hasListener = true;
+    }
 }
 
 function displayResult(result) {
     const resultArea = document.getElementById('result-area');
+    const processingStatus = document.getElementById('processing-status');
     
-    let resultText = `处理状态: ${result.status || 'Unknown'}\n`;
-    resultText += `处理时间: ${result.processing_time || 'Unknown'}\n`;
-    resultText += `文件分类: ${document.getElementById('category-select').value}\n`;
-    resultText += `音频内容: ${recordedText.trim()}\n`;
-    resultText += '-'.repeat(50) + '\n';
-    resultText += 'OCR识别结果:\n';
+    // 更新处理状态信息
+    processingStatus.textContent = `处理状态: ${result.status || 'Unknown'} | 处理时间: ${result.processing_time || 'Unknown'} | 文件分类: ${document.getElementById('category-select').value}`;
+    
+    // 格式化并显示结果
+    let formattedResult = '';
     
     // 安全处理result字段
     const ocrResult = result.result;
     if (typeof ocrResult === 'object') {
-        resultText += JSON.stringify(ocrResult, null, 2);
+        formattedResult = JSON.stringify(ocrResult, null, 2);
+    } else if (typeof ocrResult === 'string') {
+        // 将字符串中的\n转换为实际的换行符
+        formattedResult = ocrResult.replace(/\\n/g, '\n');
     } else {
-        resultText += String(ocrResult);
+        formattedResult = String(ocrResult);
     }
     
-    resultArea.value = resultText;
+    resultArea.textContent = formattedResult;
 }
 
 function showError(message) {
@@ -381,4 +458,30 @@ function arrayBufferToBase64(buffer) {
         binary += String.fromCharCode(bytes[i]);
     }
     return window.btoa(binary);
+}
+
+// 初始化复制按钮功能
+function initCopyButton() {
+    const copyButton = document.getElementById('copy-result');
+    copyButton.addEventListener('click', () => {
+        const resultArea = document.getElementById('result-area');
+        const text = resultArea.textContent;
+        
+        // 使用Clipboard API复制文本
+        navigator.clipboard.writeText(text)
+            .then(() => {
+                // 临时改变按钮文本以提供反馈
+                const originalText = copyButton.textContent;
+                copyButton.textContent = '已复制!';
+                
+                // 2秒后恢复原始文本
+                setTimeout(() => {
+                    copyButton.textContent = originalText;
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('复制失败:', err);
+                showError('复制失败，请手动选择文本并复制');
+            });
+    });
 }
